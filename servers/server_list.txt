@@ -1,0 +1,3 @@
+ensembl: https://github.com/Augmented-Nature/Ensembl-MCP-Server
+PDB: https://github.com/Augmented-Nature/PDB-MCP-Server
+PUBMED: https://github.com/Augmented-Nature/PubMed-MCP-Server

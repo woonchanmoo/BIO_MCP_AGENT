@@ -1,0 +1,73 @@
+{
+    "ncbi-literature": {
+        "command": "poetry",
+        "args": [
+            "run",
+            "python",
+            "-m",
+            "ncbi_mcp_server.server"
+        ],
+        "cwd": "${NCBI_DIR}",
+        "env": {
+            "NCBI_API_KEY": "${NCBI_API_KEY}",
+            "NCBI_EMAIL": "${NCBI_EMAIL}",
+            "PYTHONPATH": "src"
+        },
+        "transport": "stdio"
+    },
+    "alphafold-server": {
+        "command": "node",
+        "args": [
+            "${ALPHAFOLD_JS}"
+        ],
+        "transport": "stdio"
+    },
+    "ncbi-datasets-server": {
+        "command": "node",
+        "args": [
+            "${NCBI_DATASETS_JS}"
+        ],
+        "env": {
+            "NCBI_API_KEY": "${NCBI_API_KEY}"
+        },
+        "transport": "stdio"
+    },
+    "pubmed": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@cyanheads/pubmed-mcp-server"
+        ],
+        "transport": "stdio"
+    },
+    "git": {
+        "command": "uvx",
+        "args": [
+            "mcp-server-git"
+        ],
+        "transport": "stdio"
+    },
+    "github": {
+        "command": "docker",
+        "args": [
+            "run",
+            "-i",
+            "--rm",
+            "-e",
+            "GITHUB_PERSONAL_ACCESS_TOKEN",
+            "ghcr.io/github/github-mcp-server"
+        ],
+        "env": {
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "${MCP_GITHUB_PAT}"
+        },
+        "transport": "stdio"
+    },
+    "mcp-compass": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@liuyoshio/mcp-compass"
+        ],
+        "transport": "stdio"
+    }
+}

@@ -1,0 +1,22 @@
+API_KEY.env
+.env
+.ipynb
+mcp_workspace/runs/*
+!mcp_workspace/runs/.gitkeep
+mcp_workspace/inputs/data/*
+!mcp_workspace/inputs/data/.gitkeep
+mcp_workspace/inputs/questions/*
+!mcp_workspace/inputs/questions/.gitkeep
+error.txt
+
+# === MCP Node servers (용량 절감) ===
+servers/**/node_modules/
+servers/**/build/
+
+# === Python / OS (개발 환경 관련) ===
+# 파이썬 실행 시 생성되는 캐시 파일들
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+**/.DS_Store
