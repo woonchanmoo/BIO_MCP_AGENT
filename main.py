@@ -10,6 +10,32 @@ from prompt_toolkit import prompt as pt_prompt
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
+async def load_tools_resilient(config_dict: dict, timeout_seconds: float = 120.0):
+    client = MultiServerMCPClient(config_dict)
+    try:
+        tools = await asyncio.wait_for(client.get_tools(), timeout=timeout_seconds)
+        return tools, []
+    except Exception as full_load_error:
+        print("⚠️ 전체 서버 동시 로딩 실패. 서버별 개별 로딩으로 재시도합니다.")
+        print(f"   원인: {full_load_error}")
+
+    loaded_tools = []
+    failed_servers = []
+
+    for server_name, server_cfg in config_dict.items():
+        print(f"⏳ [{server_name}] 도구 로딩 시도...")
+        single_client = MultiServerMCPClient({server_name: server_cfg})
+        try:
+            server_tools = await asyncio.wait_for(single_client.get_tools(), timeout=timeout_seconds)
+            loaded_tools.extend(server_tools)
+            print(f"✅ [{server_name}] {len(server_tools)}개 도구 로드")
+        except Exception as server_error:
+            failed_servers.append((server_name, server_error))
+            print(f"❌ [{server_name}] 로딩 실패: {server_error}")
+
+    return loaded_tools, failed_servers
+
 async def get_multiline_input(prompt: str) -> str:
     # \033[96m: Cyan색, \033[1m: Bold, \033[0m: Reset
     guide = "\033[96m\033[1m(전송: Esc 누른 후 Enter)\033[0m"
@@ -83,10 +109,9 @@ async def run_mcp_agent():
         for server_name in config_dict.keys():
             print(f"   - {server_name}")
         
-        client = MultiServerMCPClient(MCP_CONFIG)
         print("⏳ Loading tools from servers...")
-        # 이 단계에서 서버가 안 뜨면 무한 대기하거나 죽을 수 있습니다.
-        tools = await asyncio.wait_for(client.get_tools(), timeout=120.0) 
+        # 이 단계에서 특정 서버가 죽어도 가능한 서버만으로 계속 진행합니다.
+        tools, failed_servers = await load_tools_resilient(MCP_CONFIG, timeout_seconds=120.0)
     except asyncio.TimeoutError:
         print("❌ MCP 서버 연결 타임아웃!")
         return
@@ -100,6 +125,12 @@ async def run_mcp_agent():
     if not tools:
         print("❌ MCP 도구를 로드하지 못했습니다.")
         return
+
+    if failed_servers:
+        print("\n⚠️ 일부 MCP 서버 도구를 로드하지 못했습니다:")
+        for server_name, error in failed_servers:
+            print(f"   - {server_name}: {error}")
+        print("   가능한 서버들로 계속 진행합니다.\n")
     
     print(f"✅ Loaded {len(tools)} tools.")
 
