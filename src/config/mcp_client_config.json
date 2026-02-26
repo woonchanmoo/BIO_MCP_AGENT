@@ -50,6 +50,7 @@
                 "@modelcontextprotocol/server-filesystem",
                 "${MCP_FILESYSTEM_DIR}"
             ],
+            "cwd": "${MCP_FILESYSTEM_DIR}",
             "transport": "stdio"
         },
         "sequential-thinking": {

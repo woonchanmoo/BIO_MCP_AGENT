@@ -39,7 +39,6 @@ def resolve_env_vars(config: dict) -> dict:
                     config["mcpServers"][server_name][property] = env_var_value
     return config
 
-
 config_file = Path(__file__).parent / "mcp_client_config.json"
 if not config_file.exists():
     raise FileNotFoundError(f"mcp_config.json file {config_file} does not exist")

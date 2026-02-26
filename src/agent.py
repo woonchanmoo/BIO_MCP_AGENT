@@ -1,8 +1,8 @@
 from langgraph.graph import StateGraph, START, END
 from langchain.chat_models import init_chat_model
-from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.prebuilt import tools_condition
 from typing import Annotated, TypedDict, Any, Sequence
-from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, HumanMessage
+from langchain_core.messages import BaseMessage, AIMessage, ToolMessage, HumanMessage, SystemMessage
 from langgraph.graph.message import add_messages
 from dotenv import load_dotenv
 
@@ -17,9 +17,44 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     error_count: int
 
+
+FILESYSTEM_TOOL_NAMES = {
+    "list_directory",
+    "read_file",
+    "write_file",
+    "create_directory",
+    "move_file",
+    "search_files",
+    "get_file_info",
+    "list_allowed_directories",
+    "read_multiple_files",
+}
+
+
+def normalize_filesystem_args(tool_name: str, tool_args: Any) -> Any:
+    if tool_name not in FILESYSTEM_TOOL_NAMES or not isinstance(tool_args, dict):
+        return tool_args
+
+    normalized = dict(tool_args)
+
+    if "path" not in normalized:
+        for alias in ("directory_path", "dir_path", "file_path", "folder_path"):
+            if isinstance(normalized.get(alias), str):
+                normalized["path"] = normalized[alias]
+                break
+
+    if tool_name == "list_directory" and not isinstance(normalized.get("path"), str):
+        normalized["path"] = "."
+
+    if tool_name == "list_directory" and normalized.get("path", "") == "":
+        normalized["path"] = "."
+
+    return normalized
+
 def build_simple_agent(model: str, system_prompt: str, tools: Sequence[Any], checkpointer = None):
     llm = init_chat_model(model=model)
     llm_with_tools = llm.bind_tools(tools)
+    tool_by_name = {tool.name: tool for tool in tools}
 
     async def agent_node(state: AgentState) -> AgentState:
         messages = state["messages"]
@@ -31,7 +66,8 @@ def build_simple_agent(model: str, system_prompt: str, tools: Sequence[Any], che
         if messages and isinstance(messages[-1], HumanMessage):
             current_errors = 0
             # 과거 에러 계산 루프를 타지 않고 바로 모델 호출로 넘깁니다.
-            response = await llm_with_tools.ainvoke(messages)
+            llm_input = [SystemMessage(content=system_prompt), *messages]
+            response = await llm_with_tools.ainvoke(llm_input)
             # (로그 출력 로직 생략)
             return {"messages": [response], "error_count": 0}
 
@@ -59,7 +95,8 @@ def build_simple_agent(model: str, system_prompt: str, tools: Sequence[Any], che
             }
         
         # 4. 모델 호출 (툴 결과를 보고 다시 판단해야 할 때)
-        response = await llm_with_tools.ainvoke(messages)
+        llm_input = [SystemMessage(content=system_prompt), *messages]
+        response = await llm_with_tools.ainvoke(llm_input)
 
         # # 4. 🔥 [최종 로그 확인 영역] 🔥
         # print("\n\n" + "📜" + "="*30 + " FULL CONVERSATION LOG " + "="*30)
@@ -96,10 +133,43 @@ def build_simple_agent(model: str, system_prompt: str, tools: Sequence[Any], che
     
     workflow = StateGraph(AgentState)
 
-    tools_node = ToolNode(
-    tools, 
-    handle_tool_errors=handle_tool_error  # 옵션명=실행할함수
-    )
+    async def tools_node(state: AgentState) -> AgentState:
+        messages = state["messages"]
+        if not messages:
+            return {"messages": [], "error_count": state.get("error_count", 0)}
+
+        last_message = messages[-1]
+        if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
+            return {"messages": [], "error_count": state.get("error_count", 0)}
+
+        tool_results: list[ToolMessage] = []
+
+        for tool_call in last_message.tool_calls:
+            tool_name = tool_call.get("name", "")
+            tool_call_id = tool_call.get("id", "")
+            raw_args = tool_call.get("args", {})
+            tool_args = normalize_filesystem_args(tool_name, raw_args)
+
+            tool = tool_by_name.get(tool_name)
+            if tool is None:
+                error_text = handle_tool_error(Exception(f"Tool not found: {tool_name}"))
+                tool_results.append(ToolMessage(content=error_text, tool_call_id=tool_call_id, name=tool_name))
+                continue
+
+            try:
+                result = await tool.ainvoke(tool_args)
+                if isinstance(result, ToolMessage):
+                    content = result.content
+                elif isinstance(result, str):
+                    content = result
+                else:
+                    content = str(result)
+            except Exception as error:
+                content = handle_tool_error(error)
+
+            tool_results.append(ToolMessage(content=content, tool_call_id=tool_call_id, name=tool_name))
+
+        return {"messages": tool_results, "error_count": state.get("error_count", 0)}
 
     workflow.add_node("Agent", agent_node)
     workflow.add_node("tools", tools_node)
